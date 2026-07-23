@@ -64,6 +64,7 @@ jobs:
           (cd dist && sha256sum byrectl-*.tar.gz | sort > checksums.txt)
           openssl dgst -sha256 -sign signing.pem -out dist/checksums.sig dist/checksums.txt
           scripts/render-installer.sh release-public.pem dist/install.sh
+          cp uninstall.sh dist/uninstall.sh
           rm -f signing.pem release-public.pem
       - name: Publish GitHub release
         env:

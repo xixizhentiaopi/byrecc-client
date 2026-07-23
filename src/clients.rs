@@ -26,6 +26,7 @@ pub enum McpMode<'a> {
 pub struct ConfigChange {
     pub path: PathBuf,
     backup: Option<PathBuf>,
+    applied: bool,
 }
 
 pub fn validate_ids(ids: &[String]) -> Result<Vec<String>> {
@@ -69,13 +70,7 @@ pub fn detect() -> Result<Vec<String>> {
 
 pub fn configure(client: &str, mode: &McpMode<'_>, endpoints: &Endpoints) -> Result<ConfigChange> {
     let home = state::home_dir()?;
-    let path = match client {
-        "claude-code" => home.join(".claude.json"),
-        "claude-desktop" => claude_desktop_path(&home),
-        "cursor" => home.join(".cursor/mcp.json"),
-        "codex" => home.join(".codex/config.toml"),
-        _ => bail!("unsupported client {client}"),
-    };
+    let path = client_path(client, &home)?;
     let _lock = ConfigLock::acquire(client)?;
     let backup = backup(client, &path)?;
     let result = if client == "codex" {
@@ -87,10 +82,54 @@ pub fn configure(client: &str, mode: &McpMode<'_>, endpoints: &Endpoints) -> Res
         restore(&path, backup.as_deref())?;
         return Err(error);
     }
-    Ok(ConfigChange { path, backup })
+    Ok(ConfigChange {
+        path,
+        backup,
+        applied: true,
+    })
+}
+
+pub fn remove(client: &str) -> Result<ConfigChange> {
+    let home = state::home_dir()?;
+    let path = client_path(client, &home)?;
+    let _lock = ConfigLock::acquire(client)?;
+    if !path.exists() {
+        return Ok(ConfigChange {
+            path,
+            backup: None,
+            applied: false,
+        });
+    }
+
+    let updated = if client == "codex" {
+        without_codex_client(&path)?
+    } else {
+        without_json_client(&path)?
+    };
+    let Some(content) = updated else {
+        return Ok(ConfigChange {
+            path,
+            backup: None,
+            applied: false,
+        });
+    };
+
+    let backup = backup(client, &path)?;
+    if let Err(error) = state::write_secret_file(&path, &content) {
+        restore(&path, backup.as_deref())?;
+        return Err(error);
+    }
+    Ok(ConfigChange {
+        path,
+        backup,
+        applied: true,
+    })
 }
 
 pub fn rollback(change: &ConfigChange) -> Result<()> {
+    if !change.applied {
+        return Ok(());
+    }
     restore(&change.path, change.backup.as_deref())
 }
 
@@ -117,6 +156,34 @@ pub fn install_skill() -> Result<PathBuf> {
         write_skill_tree(&claude)?;
     }
     Ok(universal)
+}
+
+pub fn uninstall_skill() -> Result<()> {
+    let home = state::home_dir()?;
+    let universal = home.join(".agents/skills/byrecc");
+    let claude = home.join(".claude/skills/byrecc");
+
+    match fs::symlink_metadata(&claude) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            let target = fs::read_link(&claude)
+                .with_context(|| format!("read Claude skill link {}", claude.display()))?;
+            if target != universal {
+                bail!(
+                    "refusing to remove Claude skill link {} because it points to {}",
+                    claude.display(),
+                    target.display()
+                );
+            }
+            fs::remove_file(&claude)
+                .with_context(|| format!("remove Claude skill link {}", claude.display()))?;
+        }
+        Ok(_) => remove_known_skill_tree(&claude)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(error).with_context(|| format!("inspect {}", claude.display()));
+        }
+    }
+    remove_known_skill_tree(&universal)
 }
 
 fn write_skill_tree(root: &Path) -> Result<()> {
@@ -211,6 +278,39 @@ fn write_codex(path: &Path, mode: &McpMode<'_>, endpoints: &Endpoints) -> Result
     state::write_secret_file(path, document.to_string().as_bytes())
 }
 
+fn without_json_client(path: &Path) -> Result<Option<Vec<u8>>> {
+    let mut document = read_json_object(path)?;
+    let Some(servers) = document.get_mut("mcpServers") else {
+        return Ok(None);
+    };
+    let servers = servers
+        .as_object_mut()
+        .context("mcpServers exists but is not a JSON object")?;
+    if servers.remove("byrecc").is_none() {
+        return Ok(None);
+    }
+    serde_json::to_vec_pretty(&Value::Object(document))
+        .map(Some)
+        .context("serialize JSON MCP configuration")
+}
+
+fn without_codex_client(path: &Path) -> Result<Option<Vec<u8>>> {
+    let input = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let mut document = input
+        .parse::<DocumentMut>()
+        .with_context(|| format!("parse TOML configuration {}", path.display()))?;
+    let Some(servers) = document.get_mut("mcp_servers") else {
+        return Ok(None);
+    };
+    let servers = servers
+        .as_table_mut()
+        .context("mcp_servers exists but is not a TOML table")?;
+    if servers.remove("byrecc").is_none() {
+        return Ok(None);
+    }
+    Ok(Some(document.to_string().into_bytes()))
+}
+
 fn read_json_object(path: &Path) -> Result<Map<String, Value>> {
     if !path.exists() {
         return Ok(Map::new());
@@ -279,6 +379,75 @@ fn write_regular(path: &Path, content: &[u8]) -> Result<()> {
         bail!("refusing to overwrite skill symlink {}", path.display());
     }
     fs::write(path, content).with_context(|| format!("write {}", path.display()))
+}
+
+fn remove_known_skill_tree(root: &Path) -> Result<()> {
+    match fs::symlink_metadata(root) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            bail!("refusing to traverse skill symlink {}", root.display())
+        }
+        Ok(metadata) if !metadata.is_dir() => {
+            bail!("skill path is not a directory: {}", root.display())
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error).with_context(|| format!("inspect {}", root.display())),
+    }
+
+    for directory in ["agents", "references"] {
+        let path = root.join(directory);
+        if fs::symlink_metadata(&path)
+            .map(|metadata| metadata.file_type().is_symlink())
+            .unwrap_or(false)
+        {
+            bail!("refusing to traverse skill symlink {}", path.display());
+        }
+    }
+    for relative in [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "references/tools.md",
+        "references/errors.md",
+        "version.txt",
+    ] {
+        remove_known_file(&root.join(relative))?;
+    }
+    remove_empty_dir(&root.join("agents"))?;
+    remove_empty_dir(&root.join("references"))?;
+    remove_empty_dir(root)
+}
+
+fn remove_known_file(path: &Path) -> Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).with_context(|| format!("remove {}", path.display())),
+    }
+}
+
+fn remove_empty_dir(path: &Path) -> Result<()> {
+    match fs::remove_dir(path) {
+        Ok(()) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(error).with_context(|| format!("remove empty {}", path.display())),
+    }
+}
+
+fn client_path(client: &str, home: &Path) -> Result<PathBuf> {
+    match client {
+        "claude-code" => Ok(home.join(".claude.json")),
+        "claude-desktop" => Ok(claude_desktop_path(home)),
+        "cursor" => Ok(home.join(".cursor/mcp.json")),
+        "codex" => Ok(home.join(".codex/config.toml")),
+        _ => bail!("unsupported client {client}"),
+    }
 }
 
 fn claude_desktop_path(home: &Path) -> PathBuf {
@@ -381,9 +550,46 @@ mod tests {
         rollback(&ConfigChange {
             path: path.clone(),
             backup: Some(backup),
+            applied: true,
         })
         .expect("rollback");
         assert_eq!(fs::read(path).expect("read restored config"), b"original");
+    }
+
+    #[test]
+    fn json_removal_preserves_unrelated_servers() {
+        let temporary = tempfile::tempdir().expect("tempdir");
+        let path = temporary.path().join("mcp.json");
+        fs::write(
+            &path,
+            r#"{"mcpServers":{"existing":{"command":"keep"},"byrecc":{"command":"remove"}},"theme":"dark"}"#,
+        )
+        .expect("seed config");
+        let content = without_json_client(&path)
+            .expect("remove entry")
+            .expect("changed");
+        let value: Value = serde_json::from_slice(&content).expect("parse config");
+        assert_eq!(value["mcpServers"]["existing"]["command"], "keep");
+        assert_eq!(value["theme"], "dark");
+        assert!(value["mcpServers"].get("byrecc").is_none());
+    }
+
+    #[test]
+    fn codex_removal_preserves_unrelated_tables() {
+        let temporary = tempfile::tempdir().expect("tempdir");
+        let path = temporary.path().join("config.toml");
+        fs::write(
+            &path,
+            "model = \"test\"\n[mcp_servers.keep]\ncommand = \"keep\"\n[mcp_servers.byrecc]\ncommand = \"remove\"\n",
+        )
+        .expect("seed config");
+        let content = without_codex_client(&path)
+            .expect("remove entry")
+            .expect("changed");
+        let output = String::from_utf8(content).expect("UTF-8");
+        assert!(output.contains("model = \"test\""));
+        assert!(output.contains("[mcp_servers.keep]"));
+        assert!(!output.contains("[mcp_servers.byrecc]"));
     }
 
     fn configure_at_json_for_test(

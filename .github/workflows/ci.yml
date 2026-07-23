@@ -24,5 +24,6 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --locked
       - run: sh tests/install_test.sh
+      - run: sh tests/uninstall_test.sh
       - run: sh tests/render_installer_test.sh
       - run: sh tests/skill_test.sh

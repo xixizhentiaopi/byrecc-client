@@ -124,6 +124,21 @@ impl ApiClient {
         )
     }
 
+    pub fn revoke(&self, installation_id: &str, api_key: &str) -> Result<()> {
+        let response = self
+            .client
+            .delete(self.url(&format!("/v1/installations/{installation_id}")))
+            .bearer_auth(api_key)
+            .send()
+            .context("revoke installation")?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let status = response.status();
+        let body = response.text().unwrap_or_default();
+        bail!("revoke installation failed ({status}): {}", concise(&body))
+    }
+
     pub fn forward_mcp(
         &self,
         api_key: &str,

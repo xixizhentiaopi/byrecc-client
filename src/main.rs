@@ -31,6 +31,10 @@ enum Command {
     Install(install::InstallArgs),
     /// Rotate the credential for the existing local installation.
     Login(install::LoginArgs),
+    /// Revoke the active installation and remove its local credential.
+    Logout(install::LogoutArgs),
+    /// Remove ByreCC client configuration, Skill files, credentials, and CLI.
+    Uninstall(install::UninstallArgs),
     /// Show local installation and client configuration status.
     Status,
     /// Run MCP transport commands used by configured AI clients.
@@ -55,6 +59,8 @@ fn run() -> Result<()> {
     match cli.command {
         Command::Install(args) => install::run_install(args, &endpoints),
         Command::Login(args) => install::run_login(args, &endpoints),
+        Command::Logout(args) => install::run_logout(args, &endpoints),
+        Command::Uninstall(args) => install::run_uninstall(args, &endpoints),
         Command::Status => install::show_status(),
         Command::Mcp {
             command: McpCommand::Proxy { installation },

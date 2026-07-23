@@ -17,12 +17,13 @@ All capabilities are public read operations. User profiling, personalized feeds,
 byrecc-client/
 ├── Cargo.toml / Cargo.lock
 ├── install.sh
+├── uninstall.sh
 ├── scripts/render-installer.sh
 ├── src/
 │   ├── api.rs                  # Device Login and installation API client
 │   ├── clients.rs              # Claude/Codex/Cursor config writers
-│   ├── credentials.rs          # Keychain, Secret Service, 0600 fallback
-│   ├── install.rs              # install/login/status workflow
+│   ├── credentials.rs          # Dedicated plaintext 0600 credential file
+│   ├── install.rs              # install/login/logout/uninstall/status workflow
 │   └── proxy.rs                # local stdio ↔ Streamable HTTP MCP proxy
 ├── skills/byrecc/
 │   ├── SKILL.md
@@ -33,12 +34,11 @@ byrecc-client/
 └── .github/workflows/
 ```
 
-The Rust CLI currently implements `install`, `login`, `status`, and `mcp proxy`. It detects and safely merges configuration for Claude Code, Claude Desktop, Codex, and Cursor. JSON and TOML writes are locked, backed up, atomically replaced, and rolled back when a multi-client setup step fails.
+The Rust CLI currently implements `install`, `login`, `logout`, `uninstall`, `status`, and `mcp proxy`. It detects and safely merges configuration for Claude Code, Claude Desktop, Codex, and Cursor. JSON and TOML writes are locked, backed up, atomically replaced, and rolled back when a multi-client setup step fails.
 
-Planned after the minimum install/login release:
+Planned after the macOS/Linux release:
 
 ```text
-├── uninstall.sh
 ├── install.ps1
 ├── uninstall.ps1
 ├── .codex-plugin/
@@ -56,13 +56,27 @@ Planned after the minimum install/login release:
 - user-level installation into `~/.local/bin`
 - all login, credential storage, backup, and MCP configuration delegated to `byrectl`
 
-The signed CLI embeds the versioned Skill. In proxy mode, Agent configuration contains only the absolute `byrectl` path and installation ID—never the API Key. macOS uses Keychain; Linux uses Secret Service when available and otherwise a private `0600` file.
+The signed CLI embeds the versioned Skill. In proxy mode, Agent configuration contains only the absolute `byrectl` path and installation ID—never the API Key. On macOS and Linux, the Key is stored in `~/.config/byrecc/credentials.json` as plaintext with enforced `0600` permissions. This avoids Keychain/Secret Service permission prompts while keeping the credential out of AI client configuration.
+
+Logout revokes the active installation before removing its local credential:
+
+```bash
+byrectl logout
+```
+
+The public uninstaller delegates to the already installed, signed CLI. It revokes the server credential by default and removes only the `byrecc` entries and known ByreCC Skill files:
+
+```bash
+curl -fsSL https://byre.cc/uninstall.sh | sh
+```
+
+For offline recovery, `--local-only` skips server revocation and prints a warning. Unknown Skill files, unrelated client configuration, backups, and binaries outside `~/.local/bin/byrectl` are preserved.
 
 The checked-in source installer intentionally fails closed until the release pipeline embeds the production release-signing public key. Do not publish it at `https://byre.cc/install.sh` before the CLI, signing key, signed release artifacts, and integration tests exist.
 
-## Extracting the public repository
+## Public repository
 
-Create `byrecc-client` as a separate public repository before the first release. Do not publish the private service repository or preserve its full Git history. Start the public repository from a reviewed copy of this directory, verify that `target/`, `.env`, credentials, and service code are absent, then create a clean initial commit. Future synchronization should be an explicit reviewed export from the service repository.
+The reviewed public distribution lives at [xixizhentiaopi/byrecc-client](https://github.com/xixizhentiaopi/byrecc-client). It was created without the private service repository's Git history. Future synchronization remains an explicit reviewed export of this directory; `target/`, `.env`, credentials, and service code must remain absent.
 
 Choose and add the repository license explicitly before publishing; this staging package intentionally does not guess the project's legal license.
 
@@ -96,11 +110,13 @@ The public tool reference must be regenerated or checked whenever the server MCP
 
 ```bash
 sh -n install.sh
+sh -n uninstall.sh
 sh install.sh --installer-help
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test --locked
 sh tests/install_test.sh
+sh tests/uninstall_test.sh
 sh tests/render_installer_test.sh
 sh tests/skill_test.sh
 ```

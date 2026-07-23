@@ -40,8 +40,6 @@ pub struct LocalInstallation {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CredentialStorage {
-    Keychain,
-    SecretService,
     File,
 }
 
