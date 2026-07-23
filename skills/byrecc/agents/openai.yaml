@@ -1,0 +1,13 @@
+interface:
+  display_name: "ByreCC"
+  short_description: "Search public RedNote and Zhihu content safely"
+  default_prompt: "Use $byrecc to search RedNote and Zhihu for current public content and summarize the relevant evidence."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "byrecc"
+      description: "ByreCC public RedNote and Zhihu content gateway"
+      transport: "streamable_http"
+      url: "https://api.byre.cc/mcp"
+policy:
+  allow_implicit_invocation: true
