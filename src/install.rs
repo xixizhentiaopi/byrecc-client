@@ -15,6 +15,7 @@ use crate::credentials;
 use crate::state::{self, LocalInstallation};
 
 const SKILL_VERSION: &str = include_str!("../skills/byrecc/version.txt");
+const MAX_CONSECUTIVE_POLL_FAILURES: u8 = 6;
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum Channel {
@@ -778,21 +779,45 @@ fn wait_for_authorization(
 ) -> Result<Zeroizing<String>> {
     let deadline = Instant::now() + Duration::from_secs(device.expires_in);
     let mut interval = Duration::from_secs(device.interval.max(1));
+    let mut consecutive_failures = 0_u8;
     loop {
         if Instant::now() >= deadline {
             bail!("device authorization expired")
         }
         thread::sleep(interval);
-        match api.poll_device_token(&device.device_code)? {
-            DevicePoll::Pending => {}
-            DevicePoll::SlowDown => interval += Duration::from_secs(5),
-            DevicePoll::Denied => bail!("device authorization was denied"),
-            DevicePoll::Expired => bail!("device authorization expired"),
-            DevicePoll::Authorized(response) => {
-                return Ok(Zeroizing::new(response.installation_token));
+        match api.poll_device_token(&device.device_code) {
+            Ok(poll) => {
+                consecutive_failures = 0;
+                match poll {
+                    DevicePoll::Pending => {}
+                    DevicePoll::SlowDown => interval += Duration::from_secs(5),
+                    DevicePoll::Denied => bail!("device authorization was denied"),
+                    DevicePoll::Expired => bail!("device authorization expired"),
+                    DevicePoll::Authorized(response) => {
+                        return Ok(Zeroizing::new(response.installation_token));
+                    }
+                }
+            }
+            Err(error) => {
+                consecutive_failures = consecutive_failures.saturating_add(1);
+                let Some(remaining) = remaining_poll_retries(consecutive_failures) else {
+                    return Err(error.context(
+                        "device authorization polling remained unavailable after 6 attempts; \
+                         check the network, VPN, and proxy settings, then rerun setup",
+                    ));
+                };
+                eprintln!(
+                    "  Network warning: device authorization poll failed: {error:#}. \
+                     Retrying ({remaining} attempts remaining) ..."
+                );
             }
         }
     }
+}
+
+fn remaining_poll_retries(consecutive_failures: u8) -> Option<u8> {
+    (consecutive_failures < MAX_CONSECUTIVE_POLL_FAILURES)
+        .then_some(MAX_CONSECUTIVE_POLL_FAILURES - consecutive_failures)
 }
 
 fn open_browser(url: &str) -> bool {
@@ -825,4 +850,19 @@ fn confirm_from_tty(prompt: &str) -> Result<bool> {
         answer.trim().to_ascii_lowercase().as_str(),
         "y" | "yes"
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MAX_CONSECUTIVE_POLL_FAILURES, remaining_poll_retries};
+
+    #[test]
+    fn transient_poll_failures_are_retried_before_setup_aborts() {
+        assert_eq!(remaining_poll_retries(1), Some(5));
+        assert_eq!(
+            remaining_poll_retries(MAX_CONSECUTIVE_POLL_FAILURES - 1),
+            Some(1)
+        );
+        assert_eq!(remaining_poll_retries(MAX_CONSECUTIVE_POLL_FAILURES), None);
+    }
 }

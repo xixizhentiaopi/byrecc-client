@@ -8,7 +8,7 @@ set -eu
 umask 077
 
 BYRECC_PRODUCT="ByreCC"
-BYRECC_CLI_VERSION="${BYRECC_CLI_VERSION:-0.1.0}"
+BYRECC_CLI_VERSION="${BYRECC_CLI_VERSION:-0.1.1}"
 BYRECC_RELEASE_BASE="${BYRECC_RELEASE_BASE:-https://releases.byre.cc/byrectl}"
 BYRECC_INSTALL_DIR="${BYRECC_INSTALL_DIR:-${HOME}/.local/bin}"
 
@@ -34,7 +34,7 @@ Usage:
   curl -fsSL https://byre.cc/install.sh | sh -s -- [BYRECTL INSTALL OPTIONS]
 
 Bootstrap environment:
-  BYRECC_CLI_VERSION   Pinned byrectl version (default: 0.1.0)
+  BYRECC_CLI_VERSION   Pinned byrectl version (default: 0.1.1)
   BYRECC_INSTALL_DIR   Binary directory (default: ~/.local/bin)
   BYRECC_RELEASE_BASE  Release origin (maintainer/testing use)
 
