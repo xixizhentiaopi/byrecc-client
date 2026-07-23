@@ -37,7 +37,7 @@ jobs:
           mkdir package
           cp 'target/${{ matrix.target }}/release/byrectl' package/byrectl
           tar -C package -czf 'byrectl-${{ matrix.asset }}.tar.gz' byrectl
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: byrectl-${{ matrix.asset }}
           path: byrectl-${{ matrix.asset }}.tar.gz
@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           pattern: byrectl-*
           merge-multiple: true
@@ -73,7 +73,7 @@ jobs:
           sh -n dist/uninstall.sh
           ! grep -q '^BYRECC_RELEASE_PUBLIC_KEY_PEM="__BYRECC_RELEASE_PUBLIC_KEY_PEM__"$' \
             dist/install.sh
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: release-bundle
           path: dist/*
@@ -88,7 +88,7 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: release-bundle
           path: dist
