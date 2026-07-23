@@ -66,6 +66,19 @@ Run the **Release configuration check** workflow after both values are saved.
 It validates the private key and compares the derived public key with the
 configured variable without printing either PEM value.
 
+Before creating a tag, run the **Release** workflow manually from `main`.
+Manual dispatch builds and signs the complete four-platform release bundle but
+does not create a GitHub Release:
+
+```bash
+gh workflow run release.yml \
+  --repo xixizhentiaopi/byrecc-client \
+  --ref main
+```
+
+Download and inspect the `release-bundle` workflow artifact after the run
+passes. Only `v*` tag events enter the publishing job.
+
 ## Pre-release gates
 
 Run from a clean clone:
