@@ -10,7 +10,7 @@ jobs:
   verify-signing-key:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Verify configured release signing key pair
         env:
           SIGNING_KEY: ${{ secrets.BYRECC_RELEASE_SIGNING_KEY_PEM }}

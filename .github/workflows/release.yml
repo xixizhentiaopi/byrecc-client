@@ -27,7 +27,7 @@ jobs:
             asset: linux-amd64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -37,7 +37,7 @@ jobs:
           mkdir package
           cp 'target/${{ matrix.target }}/release/byrectl' package/byrectl
           tar -C package -czf 'byrectl-${{ matrix.asset }}.tar.gz' byrectl
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: byrectl-${{ matrix.asset }}
           path: byrectl-${{ matrix.asset }}.tar.gz
@@ -47,8 +47,8 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
         with:
           pattern: byrectl-*
           merge-multiple: true
@@ -71,8 +71,9 @@ jobs:
           rm -f signing.pem release-public.pem
           sh -n dist/install.sh
           sh -n dist/uninstall.sh
-          ! grep -q '__BYRECC_RELEASE_PUBLIC_KEY_PEM__' dist/install.sh
-      - uses: actions/upload-artifact@v4
+          ! grep -q '^BYRECC_RELEASE_PUBLIC_KEY_PEM="__BYRECC_RELEASE_PUBLIC_KEY_PEM__"$' \
+            dist/install.sh
+      - uses: actions/upload-artifact@v5
         with:
           name: release-bundle
           path: dist/*
@@ -86,8 +87,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
         with:
           name: release-bundle
           path: dist
