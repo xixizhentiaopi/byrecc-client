@@ -87,7 +87,7 @@ The checked-in source installer intentionally fails closed until the release pip
 
 The reviewed public distribution lives at [xixizhentiaopi/byrecc-client](https://github.com/xixizhentiaopi/byrecc-client). It was created without the private service repository's Git history. Future synchronization remains an explicit reviewed export of this directory; `target/`, `.env`, credentials, and service code must remain absent.
 
-Choose and add the repository license explicitly before publishing; this staging package intentionally does not guess the project's legal license.
+This repository is licensed under the [MIT License](LICENSE).
 
 Required release configuration:
 

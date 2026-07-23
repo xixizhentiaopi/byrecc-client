@@ -3,6 +3,9 @@ name = "byrectl"
 version = "0.1.0"
 edition = "2024"
 description = "Secure installer and local MCP proxy for ByreCC"
+license = "MIT"
+repository = "https://github.com/xixizhentiaopi/byrecc-client"
+homepage = "https://byre.cc"
 
 [dependencies]
 anyhow = "1.0"

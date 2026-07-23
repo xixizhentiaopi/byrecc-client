@@ -4,12 +4,35 @@ The source, installers, and CI are prepared for a signed macOS/Linux release. A 
 
 ## Human decisions
 
-- Choose and commit the public repository license.
+- The public repository license is MIT and must remain included in release source archives.
 - Generate the release-signing key in an approved offline or managed key system.
 - Decide who can approve a production release and rotate the signing key.
 - Confirm ownership and TLS configuration for `byre.cc`, `api.byre.cc`, and `releases.byre.cc`.
 
 Never commit the release private key or place it in a build log.
+
+## Generate the signing key
+
+Run this on a trusted maintainer machine, outside the repository:
+
+```bash
+release_key_dir="${XDG_CONFIG_HOME:-$HOME/.config}/byrecc/release-signing"
+install -d -m 700 "$release_key_dir"
+umask 077
+openssl genpkey \
+  -algorithm RSA \
+  -pkeyopt rsa_keygen_bits:3072 \
+  -out "$release_key_dir/byrecc-release-private.pem"
+openssl pkey \
+  -in "$release_key_dir/byrecc-release-private.pem" \
+  -pubout \
+  -out "$release_key_dir/byrecc-release-public.pem"
+openssl pkey \
+  -in "$release_key_dir/byrecc-release-private.pem" \
+  -check -noout
+```
+
+Keep the private PEM in encrypted offline backup storage. Do not create it inside a Git checkout, cloud-synced folder, or shared directory.
 
 ## GitHub configuration
 
@@ -18,6 +41,26 @@ Never commit the release private key or place it in a build log.
 - Require the `CI` workflow on `main`.
 - Enable private vulnerability reporting for the public repository.
 - Protect `v*` tags or restrict release creation to approved maintainers.
+
+Repository settings path:
+
+1. Open **Settings**.
+2. Under **Security**, open **Secrets and variables → Actions**.
+3. On the **Secrets** tab, create `BYRECC_RELEASE_SIGNING_KEY_PEM` with the complete private PEM.
+4. On the **Variables** tab, create `BYRECC_RELEASE_PUBLIC_KEY_PEM` with the complete public PEM.
+
+Alternatively, use GitHub CLI without placing the private key in a command-line argument:
+
+```bash
+gh secret set BYRECC_RELEASE_SIGNING_KEY_PEM \
+  --repo xixizhentiaopi/byrecc-client \
+  < "$release_key_dir/byrecc-release-private.pem"
+gh variable set BYRECC_RELEASE_PUBLIC_KEY_PEM \
+  --repo xixizhentiaopi/byrecc-client \
+  --body "$(cat "$release_key_dir/byrecc-release-public.pem")"
+gh secret list --repo xixizhentiaopi/byrecc-client
+gh variable list --repo xixizhentiaopi/byrecc-client
+```
 
 ## Pre-release gates
 
