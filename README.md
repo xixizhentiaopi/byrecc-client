@@ -34,7 +34,7 @@ byrecc-client/
 └── .github/workflows/
 ```
 
-The Rust CLI currently implements `install`, `login`, `logout`, `uninstall`, `status`, and `mcp proxy`. It detects and safely merges configuration for Claude Code, Claude Desktop, Codex, and Cursor. JSON and TOML writes are locked, backed up, atomically replaced, and rolled back when a multi-client setup step fails.
+The Rust CLI currently implements `install`, `login`, `logout`, `uninstall`, `status`, `doctor`, `clients`, and `mcp proxy`. It detects and safely merges configuration for Claude Code, Claude Desktop, Codex, and Cursor. JSON and TOML writes are locked, backed up, atomically replaced, and rolled back when a multi-client setup step fails.
 
 Planned after the macOS/Linux release:
 
@@ -72,6 +72,15 @@ curl -fsSL https://byre.cc/uninstall.sh | sh
 
 For offline recovery, `--local-only` skips server revocation and prints a warning. Unknown Skill files, unrelated client configuration, backups, and binaries outside `~/.local/bin/byrectl` are preserved.
 
+After installation, use the diagnostics commands to inspect client registration and verify the complete authenticated path:
+
+```bash
+byrectl clients
+byrectl doctor
+```
+
+`doctor` checks the local state, exact production/development endpoint, regular-file and `0600` credential permissions, embedded Skill version, recorded client configuration, authenticated server installation state, and MCP initialization.
+
 The checked-in source installer intentionally fails closed until the release pipeline embeds the production release-signing public key. Do not publish it at `https://byre.cc/install.sh` before the CLI, signing key, signed release artifacts, and integration tests exist.
 
 ## Public repository
@@ -86,6 +95,8 @@ Required release configuration:
 - GitHub Actions variable `BYRECC_RELEASE_PUBLIC_KEY_PEM`
 - DNS/CDN publication of release artifacts under `https://releases.byre.cc/byrectl/v<version>/`
 - publication of the rendered `dist/install.sh` at `https://byre.cc/install.sh`
+
+See [RELEASING.md](RELEASING.md) for the remaining human decisions and release gates.
 
 ## Public/private boundary
 
@@ -115,6 +126,7 @@ sh install.sh --installer-help
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test --locked
+sh tests/diagnostics_test.sh
 sh tests/install_test.sh
 sh tests/uninstall_test.sh
 sh tests/render_installer_test.sh

@@ -210,6 +210,197 @@ pub fn show_status() -> Result<()> {
     Ok(())
 }
 
+pub fn show_clients() -> Result<()> {
+    let detected = clients::detect()?;
+    let local = state::load()?;
+    let recorded = local
+        .active_installation
+        .as_ref()
+        .and_then(|id| local.installations.get(id))
+        .map(|installation| installation.clients.as_slice())
+        .unwrap_or_default();
+
+    println!("ByreCC client support");
+    println!("  ID                 Detected  Configured  Recorded");
+    for client in clients::SUPPORTED {
+        println!(
+            "  {client:<18} {:<9} {:<11} {}",
+            yes_no(detected.iter().any(|item| item == client)),
+            yes_no(clients::is_configured(client)?),
+            yes_no(recorded.iter().any(|item| item == client)),
+        );
+    }
+    Ok(())
+}
+
+pub fn run_doctor(endpoints: &Endpoints) -> Result<()> {
+    let mut failures = 0_u8;
+    println!("ByreCC doctor\n");
+
+    let local = match state::load() {
+        Ok(local) => {
+            doctor_ok("Local state is readable");
+            local
+        }
+        Err(error) => {
+            doctor_error("Local state", &format!("{error:#}"));
+            bail!("doctor found 1 failed check")
+        }
+    };
+    let Some(installation_id) = local.active_installation.as_deref() else {
+        doctor_error("Active installation", "not logged in; run `byrectl login`");
+        bail!("doctor found 1 failed check")
+    };
+    let Some(installation) = local.installations.get(installation_id) else {
+        doctor_error("Active installation", "missing from local state");
+        bail!("doctor found 1 failed check")
+    };
+    doctor_ok(&format!("Active installation {installation_id}"));
+
+    if installation.api_base == endpoints.api_base && installation.mcp_url == endpoints.mcp_url {
+        doctor_ok(&format!("Endpoint {}", endpoints.api_base));
+    } else {
+        failures += 1;
+        doctor_error(
+            "Endpoint",
+            "local installation does not match the selected environment",
+        );
+    }
+
+    let credential_path = state::credentials_path()?;
+    match state::has_private_permissions(&credential_path) {
+        Ok(true) => doctor_ok(&format!(
+            "Credential file {} is a regular 0600 file",
+            credential_path.display()
+        )),
+        Ok(false) => {
+            failures += 1;
+            doctor_error(
+                "Credential file",
+                "missing, not regular, is a symlink, or does not have mode 0600",
+            );
+        }
+        Err(error) => {
+            failures += 1;
+            doctor_error("Credential file", &format!("{error:#}"));
+        }
+    }
+
+    let api_key = match credentials::load(installation_id, installation.credential_storage) {
+        Ok(api_key) => {
+            doctor_ok("Credential can be loaded");
+            Some(api_key)
+        }
+        Err(error) => {
+            failures += 1;
+            doctor_error("Credential load", &format!("{error:#}"));
+            None
+        }
+    };
+
+    if let Some(expected_skill_version) = installation.skill_version.as_deref() {
+        let skill_path = state::home_dir()?.join(".agents/skills/byrecc/version.txt");
+        match fs::read_to_string(&skill_path) {
+            Ok(version) if version.trim() == expected_skill_version => {
+                doctor_ok(&format!("Skill version {}", version.trim()));
+            }
+            Ok(version) => {
+                failures += 1;
+                doctor_error(
+                    "Skill version",
+                    &format!(
+                        "installed {}, expected {}",
+                        version.trim(),
+                        expected_skill_version
+                    ),
+                );
+            }
+            Err(error) => {
+                failures += 1;
+                doctor_error("Skill", &format!("{}: {error}", skill_path.display()));
+            }
+        }
+    } else {
+        doctor_ok("Skill was intentionally left unmanaged");
+    }
+
+    if installation.mcp_configured {
+        for client in &installation.clients {
+            match clients::is_configured(client) {
+                Ok(true) => doctor_ok(&format!("{client} has a ByreCC MCP entry")),
+                Ok(false) => {
+                    failures += 1;
+                    doctor_error(client, "ByreCC MCP entry is missing");
+                }
+                Err(error) => {
+                    failures += 1;
+                    doctor_error(client, &format!("{error:#}"));
+                }
+            }
+        }
+    } else {
+        doctor_ok("MCP client configuration was intentionally left unmanaged");
+    }
+
+    if let Some(api_key) = api_key {
+        match ApiClient::new(endpoints)?.installation_status(installation_id, &api_key) {
+            Ok(remote)
+                if remote.installation_id == installation_id
+                    && remote.status == "active"
+                    && remote.api_key_status == "active"
+                    && remote.api_key_id == installation.api_key_id
+                    && remote.clients == installation.clients
+                    && remote.cli_version == installation.cli_version
+                    && remote.skill_version == installation.skill_version =>
+            {
+                doctor_ok(&format!(
+                    "Server installation active; scopes [{}], platforms [{}], key expires {}",
+                    remote.scopes.join(", "),
+                    remote.platforms.join(", "),
+                    remote.api_key_expires_at.as_deref().unwrap_or("never"),
+                ));
+            }
+            Ok(_) => {
+                failures += 1;
+                doctor_error(
+                    "Server installation",
+                    "server state does not match the local installation",
+                );
+            }
+            Err(error) => {
+                failures += 1;
+                doctor_error("Server installation", &format!("{error:#}"));
+            }
+        }
+
+        match ApiClient::new(endpoints)?.verify_mcp(&api_key) {
+            Ok(()) => doctor_ok("Authenticated MCP connectivity"),
+            Err(error) => {
+                failures += 1;
+                doctor_error("MCP connectivity", &format!("{error:#}"));
+            }
+        }
+    }
+
+    if failures > 0 {
+        bail!("doctor found {failures} failed check(s)")
+    }
+    println!("\nAll checks passed.");
+    Ok(())
+}
+
+fn doctor_ok(message: &str) {
+    println!("  ✓ {message}");
+}
+
+fn doctor_error(check: &str, detail: &str) {
+    println!("  ✗ {check}: {detail}");
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value { "yes" } else { "no" }
+}
+
 pub fn run_logout(args: LogoutArgs, endpoints: &Endpoints) -> Result<()> {
     let mut local = state::load()?;
     let Some(installation_id) = local.active_installation.clone() else {
@@ -556,6 +747,7 @@ fn run_plan(plan: Plan, endpoints: &Endpoints) -> Result<()> {
             api_key_id: activation.api_key_id,
             credential_storage: storage,
             clients: plan.clients,
+            mcp_configured: !plan.skip_mcp,
             cli_version: env!("CARGO_PKG_VERSION").to_owned(),
             skill_version: (!plan.skip_skill).then(|| SKILL_VERSION.trim().to_owned()),
             api_base: endpoints.api_base.to_owned(),

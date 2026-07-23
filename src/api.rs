@@ -124,6 +124,20 @@ impl ApiClient {
         )
     }
 
+    pub fn installation_status(
+        &self,
+        installation_id: &str,
+        api_key: &str,
+    ) -> Result<InstallationStatusResponse> {
+        let response = self
+            .client
+            .get(self.url(&format!("/v1/installations/{installation_id}")))
+            .bearer_auth(api_key)
+            .send()
+            .context("read installation status")?;
+        decode_success(response, "read installation status")
+    }
+
     pub fn revoke(&self, installation_id: &str, api_key: &str) -> Result<()> {
         let response = self
             .client
@@ -301,6 +315,20 @@ pub struct DeviceTokenResponse {
     pub installation_token: String,
     #[allow(dead_code)]
     pub expires_in: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InstallationStatusResponse {
+    pub installation_id: String,
+    pub status: String,
+    pub clients: Vec<String>,
+    pub cli_version: String,
+    pub skill_version: Option<String>,
+    pub api_key_id: String,
+    pub api_key_status: String,
+    pub api_key_expires_at: Option<String>,
+    pub scopes: Vec<String>,
+    pub platforms: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

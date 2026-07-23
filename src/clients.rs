@@ -68,6 +68,30 @@ pub fn detect() -> Result<Vec<String>> {
     Ok(found)
 }
 
+pub fn is_configured(client: &str) -> Result<bool> {
+    let home = state::home_dir()?;
+    let path = client_path(client, &home)?;
+    if !path.exists() {
+        return Ok(false);
+    }
+    if client == "codex" {
+        let input =
+            fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        let document = input
+            .parse::<DocumentMut>()
+            .with_context(|| format!("parse TOML configuration {}", path.display()))?;
+        return Ok(document
+            .get("mcp_servers")
+            .and_then(Item::as_table)
+            .is_some_and(|servers| servers.contains_key("byrecc")));
+    }
+    let document = read_json_object(&path)?;
+    Ok(document
+        .get("mcpServers")
+        .and_then(Value::as_object)
+        .is_some_and(|servers| servers.contains_key("byrecc")))
+}
+
 pub fn configure(client: &str, mode: &McpMode<'_>, endpoints: &Endpoints) -> Result<ConfigChange> {
     let home = state::home_dir()?;
     let path = client_path(client, &home)?;

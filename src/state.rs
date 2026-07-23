@@ -31,10 +31,16 @@ pub struct LocalInstallation {
     pub api_key_id: String,
     pub credential_storage: CredentialStorage,
     pub clients: Vec<String>,
+    #[serde(default = "default_true")]
+    pub mcp_configured: bool,
     pub cli_version: String,
     pub skill_version: Option<String>,
     pub api_base: String,
     pub mcp_url: String,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -113,6 +119,17 @@ pub fn write_secret_file(path: &Path, content: &[u8]) -> Result<()> {
 }
 
 pub fn enforce_private_permissions(path: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(path)
+        .with_context(|| format!("inspect file type for {}", path.display()))?;
+    if metadata.file_type().is_symlink() {
+        bail!(
+            "refusing to use credential or state symlink {}",
+            path.display()
+        );
+    }
+    if !metadata.is_file() {
+        bail!("private path is not a regular file: {}", path.display());
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -130,6 +147,23 @@ pub fn enforce_private_permissions(path: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+pub fn has_private_permissions(path: &Path) -> Result<bool> {
+    let metadata =
+        fs::symlink_metadata(path).with_context(|| format!("inspect {}", path.display()))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Ok(false);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        Ok(metadata.permissions().mode() & 0o777 == 0o600)
+    }
+    #[cfg(not(unix))]
+    {
+        Ok(true)
+    }
 }
 
 #[cfg(test)]
@@ -153,5 +187,18 @@ mod tests {
                 0o600
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_private_file_symlinks() {
+        let temporary = tempfile::tempdir().expect("tempdir");
+        let target = temporary.path().join("target.json");
+        let link = temporary.path().join("credentials.json");
+        fs::write(&target, b"secret").expect("write target");
+        std::os::unix::fs::symlink(&target, &link).expect("create symlink");
+
+        assert!(!has_private_permissions(&link).expect("inspect link"));
+        assert!(enforce_private_permissions(&link).is_err());
     }
 }

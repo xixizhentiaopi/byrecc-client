@@ -37,6 +37,10 @@ enum Command {
     Uninstall(install::UninstallArgs),
     /// Show local installation and client configuration status.
     Status,
+    /// Check local files, server installation state, and MCP connectivity.
+    Doctor,
+    /// List supported, detected, configured, and recorded AI clients.
+    Clients,
     /// Run MCP transport commands used by configured AI clients.
     Mcp {
         #[command(subcommand)]
@@ -62,6 +66,8 @@ fn run() -> Result<()> {
         Command::Logout(args) => install::run_logout(args, &endpoints),
         Command::Uninstall(args) => install::run_uninstall(args, &endpoints),
         Command::Status => install::show_status(),
+        Command::Doctor => install::run_doctor(&endpoints),
+        Command::Clients => install::show_clients(),
         Command::Mcp {
             command: McpCommand::Proxy { installation },
         } => proxy::run(&installation, &endpoints),
