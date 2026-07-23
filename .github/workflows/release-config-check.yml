@@ -1,0 +1,18 @@
+name: Release configuration check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-signing-key:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify configured release signing key pair
+        env:
+          SIGNING_KEY: ${{ secrets.BYRECC_RELEASE_SIGNING_KEY_PEM }}
+          PUBLIC_KEY: ${{ vars.BYRECC_RELEASE_PUBLIC_KEY_PEM }}
+        run: sh scripts/verify-release-keypair.sh

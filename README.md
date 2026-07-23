@@ -130,6 +130,7 @@ sh tests/diagnostics_test.sh
 sh tests/install_test.sh
 sh tests/uninstall_test.sh
 sh tests/render_installer_test.sh
+sh tests/release_key_test.sh
 sh tests/skill_test.sh
 ```
 

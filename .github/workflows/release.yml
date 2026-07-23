@@ -57,8 +57,7 @@ jobs:
           SIGNING_KEY: ${{ secrets.BYRECC_RELEASE_SIGNING_KEY_PEM }}
           PUBLIC_KEY: ${{ vars.BYRECC_RELEASE_PUBLIC_KEY_PEM }}
         run: |
-          test -n "$SIGNING_KEY"
-          test -n "$PUBLIC_KEY"
+          sh scripts/verify-release-keypair.sh
           printf '%s\n' "$SIGNING_KEY" > signing.pem
           printf '%s\n' "$PUBLIC_KEY" > release-public.pem
           (cd dist && sha256sum byrectl-*.tar.gz | sort > checksums.txt)

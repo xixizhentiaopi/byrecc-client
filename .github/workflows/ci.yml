@@ -27,4 +27,5 @@ jobs:
       - run: sh tests/install_test.sh
       - run: sh tests/uninstall_test.sh
       - run: sh tests/render_installer_test.sh
+      - run: sh tests/release_key_test.sh
       - run: sh tests/skill_test.sh

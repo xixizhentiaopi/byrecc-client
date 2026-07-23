@@ -62,6 +62,10 @@ gh secret list --repo xixizhentiaopi/byrecc-client
 gh variable list --repo xixizhentiaopi/byrecc-client
 ```
 
+Run the **Release configuration check** workflow after both values are saved.
+It validates the private key and compares the derived public key with the
+configured variable without printing either PEM value.
+
 ## Pre-release gates
 
 Run from a clean clone:
@@ -74,6 +78,7 @@ sh tests/diagnostics_test.sh
 sh tests/install_test.sh
 sh tests/uninstall_test.sh
 sh tests/render_installer_test.sh
+sh tests/release_key_test.sh
 sh tests/skill_test.sh
 ```
 
